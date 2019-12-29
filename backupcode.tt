@@ -1,0 +1,78 @@
+            #The graphic in the app could just redraw
+            if(key==ord('w')):
+                self.Canny_Upper+=5
+            elif(key==ord('s')):
+                if(self.Canny_Upper-5<=self.Canny_Lower):
+                    MakeSound()
+                else:
+                    self.Canny_Upper-=5
+            elif(key==ord('a')):
+                if(self.Canny_Lower-5==0):
+                    MakeSound()
+                else:
+                    self.Canny_Lower-=5
+            elif(key==ord('d')):
+                if(self.Canny_Upper<=self.Canny_Lower+5):
+                    MakeSound()
+                else:
+                    self.Canny_Lower+=5
+
+            circles = cv2.HoughCircles(Canny,cv2.HOUGH_GRADIENT,1,100,
+                                        param1=50,param2=30)#,minRadius=0,maxRadius=0)
+
+            circles = np.uint16(np.around(circles))
+            for i in circles[0,:]:
+                # draw the outer circle
+                cv2.circle(Colored,(i[0],i[1]),i[2],(0,255,0),2)
+                # draw the center of the circle
+                cv2.circle(Colored,(i[0],i[1]),2,(0,0,255),3)
+
+def MakeSound():
+    for i in range(1,6):
+        sys.stdout.write('\r\a{i}'.format(i=i))
+        sys.stdout.flush()
+        time.sleep(1)
+    sys.stdout.write('\n')
+
+    print("x0 ",x0," center[0] ",center[0]," Radius ",Radius)
+    #self.GameFrame[i[1]-i[2]:i[1]+i[2],i[0]-i[2]:i[0]+i[2]].copy()
+
+
+
+        
+        #Maybe Kmeans isn't needed
+        #Lag_A=10
+        #Lag_B=5
+        #
+        #InitialPts=[]
+        #InitialPts.append(self.GameFrame.shape[1]//13,self.GameFrame.shape[0]//13)
+        #InitialPts.append(self.GameFrame.shape[1]  //Lag_B,self.GameFrame.shape[0]//Lag_A)
+        #InitialPts.append((Lag_B-1)*self.GameFrame.shape[1]//Lag_B,self.GameFrame.shape[0]//Lag_A)
+        #InitialPts.append(self.GameFrame.shape[1]//5,(Lag_A-1)*self.GameFrame.shape[0]//Lag_A)
+        #InitialPts.append((Lag_B-1)*self.GameFrame.shape[1]//5,(Lag_A-1)*self.GameFrame.shape[0]//Lag_A)
+        #InitialPts.append(round((0.70955882352*self.GameFrame.shape[1])//1),round((0.08816120906*self.GameFrame.shape[0])//1))
+
+
+
+
+        #Can be replaced by drawing a convex hull around them?
+        for i in range(len(contours)):
+            c=contours[i]
+            extLeft = tuple(c[c[:, :, 0].argmin()][0])
+            extRight = tuple(c[c[:, :, 0].argmax()][0])
+            extTop = tuple(c[c[:, :, 1].argmin()][0])
+            extBot = tuple(c[c[:, :, 1].argmax()][0])
+            if(i==0):                    
+                Left=extLeft
+                Right=extRight
+                Top=extTop
+                Bottom=extBot
+            else:
+                if(extLeft[0]<Left[0]):
+                    Left=extLeft
+                if(extRight[0]>Right[0]):
+                    Right=extRight
+                if(extTop[1]<Top[1]):
+                    Top=extTop
+                if(extBot[1]>Bottom[1]):
+                    Bottom=extBot

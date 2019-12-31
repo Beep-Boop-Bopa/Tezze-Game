@@ -76,3 +76,98 @@ def MakeSound():
                     Top=extTop
                 if(extBot[1]>Bottom[1]):
                     Bottom=extBot
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                if(cv2.contourArea(c)>15):
+                    Left = tuple(c[c[:, :, 0].argmin()][0])
+                    Right = tuple(c[c[:, :, 0].argmax()][0])
+                    Top = tuple(c[c[:, :, 1].argmin()][0])
+                    Bottom = tuple(c[c[:, :, 1].argmax()][0])
+                    Width=Bottom[1]-Top[1]
+                    Length=Left[0]-Right[0]
+                    if(Length/Width<=3 and Width/Length<=3):#Introduce area measures as well
+                        _,_,w,h = cv2.boundingRect(c)
+                        Area=w*h
+                        if(cv2.contourArea(c)>250 or cv2.contourArea(c)/Area>0.45):
+                            OverLap =  np.zeros((self.Circles[i][3].shape[0],self.Circles[i][3].shape[1],3), np.uint8)
+                            cv2.drawContours(OverLap,[c],-1,[255,255,255],cv2.FILLED);
+                            OverLap=cv2.bitwise_and(OverLap,CircleImg)
+                            contours1, hierarchy = cv2.findContours(self.getCannyImage(OverLap,5,10), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                            Area=0
+                            for cnts in contours1:
+                                Area+=cv2.contourArea(cnts)
+
+                            M = cv2.moments(c)
+                            cX = int(M["m10"] / M["m00"])
+                            cY = int(M["m01"] / M["m00"])
+                            Distances=[]
+                            for Sublist in c:
+                                Distances.append(self.getEuclidDist(Sublist[0],self.Circles[i][0]))
+                            Smallest_Distance=sorted(Distances, key=lambda z: z)[0]
+
+                            if(Smallest_Distance < self.Circles[i][1] and Area/cv2.contourArea(c)>0.25):
+                                Contour_img=self.Circles[i][3][Top[1]:Bottom[1],Left[0]:Right[0]].copy()
+                                Sum=[0,0,0]
+                                No=0
+                                for x in range(Top[1],Bottom[1]):
+                                    for j in range(Left[0],Right[0]):
+                                        if(cv2.pointPolygonTest(c,(j,x),0)>0):
+                                            Sum[0]+=Contour_img[x-Top[1]][j-Left[0]][0]
+                                            Sum[1]+=Contour_img[x-Top[1]][j-Left[0]][1]
+                                            Sum[2]+=Contour_img[x-Top[1]][j-Left[0]][2]
+                                            No+=1
+                                cv2.drawContours(New_Img,[c],-1,[255,255,255],cv2.FILLED);
+                                New_Img=cv2.bitwise_and(New_Img,self.Circles[i][3])
+                                mean = [Sum[0]/No,Sum[1]/No,Sum[2]/No]
+                                Color=self.findClosetColor(mean)
+                                self.segments[i].append([c,Color])
+#                            print("mean ", np.uint32(mean), " Color ",Color)
+#                            cv2.imshow("Contour",Contour_img)
+#                            cv2.imshow("New_Img",New_Img)
+#                            cv2.moveWindow("Contour", 800, 150)
+#                            cv2.waitKey(0)
+            cv2.imshow("New_Img",CircleImg)
+            self.Circles[i][3]=New_Img
+
+
+
+
+
+
+
+
+
+
+        Canny=self.getCannyImage(self.GameFrame)
+        contours, hierarchy = cv2.findContours(Canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        c = np.vstack(contours[i] for i in range(len(contours)) if( cv2.contourArea(contours[i])>20))
+        c=cv2.convexHull(c)
+        Canny=cv2.drawContours(Canny,[c],-1,255,5);#cv2.FILLED);
+        cv2.imshow("Canny Filled",Canny)
+        mat = np.argwhere(Canny != 0)
+        mat = np.array(mat).astype(np.float32) #have to convert type for PCA
+        m, e = cv2.PCACompute(mat, mean = np.array([]))
+        #now to draw: let's scale our primary axis by 100, 
+        #and the secondary by 50
+        center = tuple(m[0])
+        endpoint1 = tuple(m[0] + e[0]*100)
+        endpoint2 = tuple(m[0] + e[1]*50)
+
+        cv2.circle(self.GameFrame, center, 5, [255,255,255])
+        cv2.line  (self.GameFrame, center, endpoint1, [255,255,255])
+        cv2.line  (self.GameFrame, center, endpoint2, [255,255,255])
+
+
+        print(self.GameFrame.shape)

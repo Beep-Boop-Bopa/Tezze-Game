@@ -5,29 +5,30 @@ import time
 import statistics as st
 import threading as th
 import imutils
-
+from Segment import Segment,Circle
+import os
 
 def Var_calc(Img,STD_array,start,end):
     for i in range(start,end):
-        STD_array[i]=[i,np.var(Img[i])]
+        STD_array[i]=[i,cv2.meanStdDev( Img[i] )[1] ]
 
 class Game:
     def __init__(self):
-        self.Canny_Upper=150
-        self.Canny_Lower=75
+        self.Canny_Upper=100
+        self.Canny_Lower=50
         self.Scale=1
         self.FullFrame=0
         self.GameFrame=0
         self.Cardinality=1 #0 means flat, 1 means vertical
         self.game_Center=0
         self.FullFrame_center=0
-        self.Circles=[]
-        self.Max_radius=0
-        self.Min_radius=0
-        self.colors=[]
-        self.Segments=[]
-        self.lobes=[]
-
+        self.Circles=[]  #2 circles put in here
+        self.Max_radius=0#Reassigned during Initialisation
+        self.Min_radius=0#Reassigned during Initialisation
+        self.colors=[]   #Of length 4 for the 4 colors we have
+        self.Segments=[[],[]] #One sublist for each circle  
+        self.lobes=[]    #One sublist for each circle
+        self.Dist_Circles=0
     def setup(self, img="Photos/3.jpg"):
         Colored=cv2.imread(img)
         self.FindScale()
@@ -37,82 +38,86 @@ class Game:
         self.findColors()
         self.FindCircles()
         self.FindSegments()
-        self.ExtractLobes()
-        self.AssignLobes()
+        self.findCommonSegments()
+        #self.ExtractLobes()
+        #self.AssignLobes()
         self.draw()
-
-    def ExtractLobes(self):
-        pass
 
     def AssignLobes(self):
         pass
 
+    def ExtractLobes(self):
+        for circle in self.Circles:
+            for lobe in self.lobes:
+                if(circle.Intersect(lobe,self.Dist_Circles,self.getEuclidDist(circle.getGameCenter(),lobe.getGameCenter()))):
+                    lobe.setID(circle.getID())
+                    lobe.setIndvCenter((lobe.getGameCenter()[0]-circle.getGameCenter()[0]+circle.getIndvCenter()[0],lobe.getGameCenter()[1]-circle.getGameCenter()[1]+circle.getIndvCenter()[1]))
+                    circle.addLobe(lobe)
+                    cv2.circle(circle.getImage(),lobe.getIndvCenter(),lobe.getRadius(),(255,255,255),1)
+
+    def findCommonSegments(self):
+        pass
+
     def FindSegments(self):
-        for i in range(2):
-            Crc=self.Circles[i]
-            Canny=self.getCannyImage(self.Circles[i][3])
-            contours, hierarchy = cv2.findContours(Canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-            self.segments=[[],[]]
-            New_Img =  np.zeros((self.Circles[i][3].shape[0],self.Circles[i][3].shape[1],3), np.uint8)
+        self.segments=[[],[]]
+        for circle in self.Circles:
+            id=0
+            img=cv2.cvtColor(circle.getImage(), cv2.COLOR_BGR2GRAY)   #We can change this to self.getGameFrame? 
+            ret,img = cv2.threshold(img,10,255,cv2.THRESH_BINARY)
+            contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
             contours=sorted(contours, key=lambda z: cv2.contourArea(z),reverse=True)
+
+            #will have to filter though the contours whose centroids lie within the radius of the circle???
+
             LargestContour=contours[0]
             Distances=[]
             for Sublist in LargestContour:
-                Distances.append(self.getEuclidDist(Sublist[0],self.Circles[i][0]))
-            self.Circles[i][1]=sorted(Distances, key=lambda z: z,reverse=True)[0]
-            CircleImg =  np.zeros((self.Circles[i][3].shape[0],self.Circles[i][3].shape[1],3), np.uint8)
-            cv2.circle(CircleImg,self.Circles[i][0],int(self.Circles[i][1]),(255,255,255),-1)
+                Distances.append(self.getEuclidDist(Sublist[0],circle.getIndvCenter()))
+            #The radius of the circles is modified and set to the largest distance between the current center point and all of the pts on the contour
+            circle.setRadius(sorted(Distances, key=lambda z: z,reverse=True)[0])
+
+
+            #Might need to move this section before the one chunk above?
+            New_Img =  np.zeros((circle.getImage().shape[0],circle.getImage().shape[1],3), np.uint8)
+            CircleImg =  New_Img.copy()
+            cv2.circle(CircleImg,circle.getIndvCenter(),circle.getRadius(),(255,255,255),-1)
+
             for c in contours:
-                if(cv2.contourArea(c)>15):
+                if(cv2.contourArea(c)>5):
                     Left = tuple(c[c[:, :, 0].argmin()][0])
                     Right = tuple(c[c[:, :, 0].argmax()][0])
                     Top = tuple(c[c[:, :, 1].argmin()][0])
                     Bottom = tuple(c[c[:, :, 1].argmax()][0])
-                    Width=Bottom[1]-Top[1]
-                    Length=Left[0]-Right[0]
-                    if(Length/Width<=3 and Width/Length<=3):#Introduce area measures as well
-                        _,_,w,h = cv2.boundingRect(c)
-                        Area=w*h
-                        if(cv2.contourArea(c)>250 or cv2.contourArea(c)/Area>0.45):
-                            OverLap =  np.zeros((self.Circles[i][3].shape[0],self.Circles[i][3].shape[1],3), np.uint8)
-                            cv2.drawContours(OverLap,[c],-1,[255,255,255],cv2.FILLED);
-                            OverLap=cv2.bitwise_and(OverLap,CircleImg)
-                            contours1, hierarchy = cv2.findContours(self.getCannyImage(OverLap,5,10), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-                            Area=0
-                            for cnts in contours1:
-                                Area+=cv2.contourArea(cnts)
-
-                            M = cv2.moments(c)
-                            cX = int(M["m10"] / M["m00"])
-                            cY = int(M["m01"] / M["m00"])
-                            Distances=[]
-                            for Sublist in c:
-                                Distances.append(self.getEuclidDist(Sublist[0],self.Circles[i][0]))
-                            Smallest_Distance=sorted(Distances, key=lambda z: z)[0]
-
-                            if(Smallest_Distance < self.Circles[i][1] and Area/cv2.contourArea(c)>0.25):
-                                Contour_img=self.Circles[i][3][Top[1]:Bottom[1],Left[0]:Right[0]].copy()
-                                Sum=[0,0,0]
-                                No=0
-                                for x in range(Top[1],Bottom[1]):
-                                    for j in range(Left[0],Right[0]):
-                                        if(cv2.pointPolygonTest(c,(j,x),0)>0):
-                                            Sum[0]+=Contour_img[x-Top[1]][j-Left[0]][0]
-                                            Sum[1]+=Contour_img[x-Top[1]][j-Left[0]][1]
-                                            Sum[2]+=Contour_img[x-Top[1]][j-Left[0]][2]
-                                            No+=1
-                                cv2.drawContours(New_Img,[c],-1,[255,255,255],cv2.FILLED);
-                                New_Img=cv2.bitwise_and(New_Img,self.Circles[i][3])
-                                mean = [Sum[0]/No,Sum[1]/No,Sum[2]/No]
-                                Color=self.findClosetColor(mean)
-                                self.segments[i].append([c,Color])
-#                            print("mean ", np.uint32(mean), " Color ",Color)
-#                            cv2.imshow("Contour",Contour_img)
-#                            cv2.imshow("New_Img",New_Img)
-#                            cv2.moveWindow("Contour", 800, 150)
-#                            cv2.waitKey(0)
-            cv2.imshow("New_Img",CircleImg)
-            self.Circles[i][3]=New_Img
+                    
+                    OverLap =  np.zeros((circle.getImage().shape[0],circle.getImage().shape[1],3), np.uint8)#Change to self.GameFrame
+                    cv2.drawContours(OverLap,[c],-1,[255,255,255],cv2.FILLED);
+                    OverLap=cv2.bitwise_and(OverLap,CircleImg)
+                    OverLap=cv2.cvtColor(OverLap, cv2.COLOR_BGR2GRAY)
+                    contours1, hierarchy = cv2.findContours(OverLap, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                    OverLapArea=0
+                    for cnts in contours1:
+                        OverLapArea+=cv2.contourArea(cnts)
+                    if(OverLapArea/cv2.contourArea(c)>0.25):
+                        Contour_img=circle.getImage()[Top[1]:Bottom[1],Left[0]:Right[0]].copy()
+                        Sum=[0,0,0]
+                        No=0
+                        for x in range(Top[1],Bottom[1]):
+                            for j in range(Left[0],Right[0]):
+                                if(cv2.pointPolygonTest(c,(j,x),0)>0):
+                                    Sum[0]+=Contour_img[x-Top[1]][j-Left[0]][0]
+                                    Sum[1]+=Contour_img[x-Top[1]][j-Left[0]][1]
+                                    Sum[2]+=Contour_img[x-Top[1]][j-Left[0]][2]
+                                    No+=1
+                        mean = [Sum[0]/No,Sum[1]/No,Sum[2]/No]
+                        Color=self.findClosetColor(mean)
+                        M = cv2.moments(c)
+                        cX = int(M["m10"] / M["m00"])
+                        cY = int(M["m01"] / M["m00"])
+                        Seg=Segment((cX,cY),Color,c,id,circle.getID())##Segment ID will depend on a lot more than this?????
+                        id+=1
+                        self.segments[circle.getID()].append(Seg)
+                        cv2.drawContours(New_Img,[c],-1,[255,255,255],cv2.FILLED)
+            circle.setImage(cv2.bitwise_and(New_Img,circle.getImage()))#A little bit of code here
 
     def findClosetColor(self,color):
         Dist=[]
@@ -150,41 +155,35 @@ class Game:
         #cv2.moveWindow("res2", 500, 150)
 
     def FindCircles(self):    
-        Distances=self.HoughCircles(self.GameFrame,self.Min_radius,self.Max_radius,self.game_Center)
-        if(Distances is not None):
-            sorted(Distances, key=lambda x: x[2])
-            self.Circles=Distances[0:2]
-            i=0
-            for center,Radius,_ in self.Circles:
-                #Do the mask thing here
-                y0=center[1]-Radius if(center[1]-Radius>=0) else 0
-                y1=center[1]+Radius if(center[1]+Radius<=self.GameFrame.shape[0]) else self.GameFrame.shape[0]###not correcy
-                x0=center[0]-Radius if(center[0]-Radius>=0) else 0
-                x1=center[0]+Radius if(center[0]+Radius<=self.GameFrame.shape[1]) else self.GameFrame.shape[1]
+        Circles=self.HoughCircles(self.GameFrame,self.Min_radius,self.Max_radius,self.game_Center)
+        if(Circles is not None):
+            sorted(Circles, key=lambda Circle: Circle.getDistance())
+            self.Circles=Circles[0:2]
+            self.lobes=Circles[2:len(Circles)]
+            for circle in self.Circles:
+                #cv2.circle(self.GameFrame, circle.getGameCenter(), circle.getRadius(), [255,255,255], 1)
+                y0=circle.getGameCenter()[1]-circle.getRadius() if(circle.getGameCenter()[1]-circle.getRadius()>0) else 0
+                y1=circle.getGameCenter()[1]+circle.getRadius() if(circle.getGameCenter()[1]+circle.getRadius()<self.GameFrame.shape[0]) else self.GameFrame.shape[0]###not correcy
+                x0=circle.getGameCenter()[0]-circle.getRadius() if(circle.getGameCenter()[0]-circle.getRadius()>0) else 0
+                x1=circle.getGameCenter()[0]+circle.getRadius() if(circle.getGameCenter()[0]+circle.getRadius()<self.GameFrame.shape[1]) else self.GameFrame.shape[1]
                 Circle=self.GameFrame[y0:y1,x0:x1]
-                self.Circles[i][0]=(Radius//1,Radius//1)
-                blank_image = np.zeros((Circle.shape[0],Circle.shape[1],3), np.uint8)
-                cv2.circle(blank_image, self.Circles[i][0], Radius-1, [255,255,255], -1)
-                self.Circles[i].append(cv2.bitwise_and(blank_image,Circle))
-                i=+1
+                blank_image = np.zeros((Circle.shape[1],Circle.shape[0],3), np.uint8)
+                cv2.circle(blank_image, circle.getIndvCenter(), circle.getRadius()-1, [255,255,255], -1)
+                circle.setImage(cv2.bitwise_and(blank_image,Circle))
+            self.Circles=sorted(self.Circles, key=lambda x: x.getGameCenter()[0])
+            self.Circles[0].setID(0)
+            self.Circles[1].setID(1)
+            self.Dist_Circles=self.getEuclidDist(self.Circles[0].getGameCenter(),self.Circles[1].getGameCenter())
+            for circle in self.lobes:
+                cv2.circle(self.GameFrame, circle.getGameCenter(), circle.getRadius(), [255,255,255], 1)
+
         else:
             print("Not enough Circles found")
 
     def CutGameBoard(self):
         Canny=self.getCannyImage(self.FullFrame)
         contours, hierarchy = cv2.findContours(Canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-        #Can be replaced by drawing a convex hull around them?
-        #size of contour points
-        length = len(contours)
-        #concatinate poits form all shapes into one array
-        c = np.vstack(contours[i] for i in range(length))
-        hull = cv2.convexHull(c)
-        uni_hull = []
-        uni_hull.append(hull)
-        blank_image = np.zeros((self.FullFrame.shape[0],self.FullFrame.shape[1],3), np.uint8)
-        blank_image=cv2.drawContours(blank_image,uni_hull,-1,[255,255,255],-1);
-        self.FullFrame=cv2.bitwise_and(blank_image,self.FullFrame)
+        c = np.vstack(contours[i] for i in range(len(contours)) if( cv2.contourArea(contours[i])>50))
 
         Left = tuple(c[c[:, :, 0].argmin()][0])
         Right = tuple(c[c[:, :, 0].argmax()][0])
@@ -192,38 +191,41 @@ class Game:
         Bottom = tuple(c[c[:, :, 1].argmax()][0])
 
         self.GameFrame=self.FullFrame[Top[1]:Bottom[1],Left[0]:Right[0]].copy()
-
+        self.FullFrame=cv2.drawContours(self.FullFrame,contours,-1,[255,0,0],3);
+        #Making the Game horizontal if vertical
         if(Bottom[1]-Top[1]<Right[0]-Left[0]):
             self.Cardinality=0
         else:
             self.FullFrame = imutils.rotate_bound(self.FullFrame, 90)
             self.GameFrame = imutils.rotate_bound(self.GameFrame, 90)
 
+        #Finding some extra parameters
         self.game_Center=(self.GameFrame.shape[1]//2,self.GameFrame.shape[0]//2)
         x=self.game_Center[0]+Left[0]
         y=self.game_Center[1]+Top[1]
         self.FullFrame_center=(x,y)
 
-        Width=self.GameFrame.shape[0]
-        length=self.GameFrame.shape[1]
+        self.Min_radius=self.GameFrame.shape[0]//3
+        self.Max_radius=self.GameFrame.shape[1]//2
 
-        self.Min_radius=Width//3
-        self.Max_radius=length//2
+        print(self.GameFrame.shape)
 
-        Colored_pic = self.GameFrame.copy()
-        Colored_pic = Colored_pic.reshape((-1,3))
+        #DeNoising the GameFrame
+        
+        DeNoised_pic = self.GameFrame.copy()
+        DeNoised_pic = DeNoised_pic.reshape((-1,3))
 
         No_OF_threads=4
         previous_Index=0
-        length=len(Colored_pic)//No_OF_threads
-        Remainder=len(Colored_pic)%No_OF_threads
+        length=len(DeNoised_pic)//No_OF_threads
+        Remainder=len(DeNoised_pic)%No_OF_threads
         Threads={}
-        STD_RGB=[None]*len(Colored_pic)
+        STD_RGB=[None]*len(DeNoised_pic)
         for i in range(No_OF_threads):
             start_Index=previous_Index
-            last_index=previous_Index+length if(i!=0) else previous_Index+length+Remainder#len(Colored_pic)
+            last_index=previous_Index+length if(i!=0) else previous_Index+length+Remainder
             previous_Index=last_index
-            Threads[i]=th.Thread(target=Var_calc,args=[Colored_pic,STD_RGB,start_Index,last_index])
+            Threads[i]=th.Thread(target=Var_calc,args=[DeNoised_pic,STD_RGB,start_Index,last_index])
             Threads[i].start()
 
         for i in range(No_OF_threads):
@@ -232,18 +234,20 @@ class Game:
         STD_RGB=sorted(STD_RGB, key=lambda x: x[1])
 
         for i in range(round(len(STD_RGB)*0.375)):
-            Colored_pic[STD_RGB[i][0]]=[0,0,0]
+            DeNoised_pic[STD_RGB[i][0]]=[0,0,0]
 
-        self.GameFrame = Colored_pic.reshape((self.GameFrame.shape))
-
+        self.GameFrame = DeNoised_pic.reshape((self.GameFrame.shape))
+        
     def draw(self):
         while(True):
             key=cv2.waitKey(1)
-            cv2.imshow("Canny",self.GameFrame)
-            cv2.moveWindow("Canny", 150, 150)
-            cv2.imshow("Circle1",self.Circles[0][3])
+            cv2.imshow("Board",self.GameFrame)
+            cv2.moveWindow("Board", 150, 150)
+            cv2.imshow("Full",self.FullFrame)
+            cv2.moveWindow("Full", 800, 150)
+            cv2.imshow("Circle1",self.Circles[0].getImage())
             cv2.moveWindow("Circle1", 500, 50)
-            cv2.imshow("Circle2",self.Circles[1][3])
+            cv2.imshow("Circle2",self.Circles[1].getImage())
             cv2.moveWindow("Circle2", 500, 350)
             if(key==ord('q')):
                 break
@@ -251,20 +255,6 @@ class Game:
 
     def FindScale(self,scale=8):
         self.Scale=1/scale
-
-    def HoughCircles(self,image,min,max,center):
-        Canny=self.getCannyImage(image)
-        circles = cv2.HoughCircles(Canny,cv2.HOUGH_GRADIENT,1,100,
-                            param1=50,param2=30,minRadius=min,maxRadius=max)
-        if(circles is not None):
-            circles = np.int32(np.around(circles))
-            Distances=[]
-            for i in circles[0,:]:
-                Distances.append([(i[0],i[1]),i[2],self.getEuclidDist(center,(i[0],i[1]))])
-            return Distances
-        else:
-            return None
-
 
     def getEuclidDist(self,Point1,Point2,ThreeD_bool=0):
         X_diff=(Point1[0]-Point2[0])**2
@@ -275,21 +265,48 @@ class Game:
             Sum+=Z_diff
         return (Sum)**.5
 
-    def getCannyImage(self,image,Upper=0,Lower=0):
-        GREY=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        GREY=cv2.GaussianBlur(GREY,(3,3),0)
+    def getCannyImage(self,image,Upper=0,Lower=0,Canny=1,data=0):
+        image=image.copy()
+        if(image.shape[2]==3):
+            image=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         if(Upper==0):
             Upper=self.Canny_Upper
             Lower=self.Canny_Lower
-        return cv2.Canny(GREY,Lower,Upper)
+        if(Canny):
+            GREY=cv2.GaussianBlur(image,(3,3),0)
+            return cv2.Canny(GREY,Lower,Upper)
+        else: #For thresholded image
+            _,image = cv2.threshold(image,5,255,cv2.THRESH_BINARY_INV)
+            blank_image = np.zeros(image.shape, np.uint8)
+            cv2.circle(blank_image,data[1],data[0]-8,(255,255,255),-1)
+            image=cv2.bitwise_and(blank_image,image)
+            kernel = np.ones((3,3),np.uint8)
+            image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+            image=cv2.Canny(image,Lower,Upper)
+            #image = cv2.erode(image,kernel,iterations = 1)
+            cv2.imshow("Voila",image)
+            cv2.waitKey(0)
+            return image
+
+    def HoughCircles(self,image,min,max,center,Canny=1,data=0):
+        Canny=self.getCannyImage(image,0,0,Canny,data)
+        circles = cv2.HoughCircles(Canny,cv2.HOUGH_GRADIENT,1,50,
+                            param1=10,param2=10,minRadius=min,maxRadius=max)
+        if(circles is not None):
+            circles = np.int32(np.around(circles))
+            Circles=[]
+            for i in circles[0,:]:
+                Circles.append(   Circle(     (i[0],i[1]),   i[2],    self.getEuclidDist(center,(i[0],i[1])),  -1)  )
+            return Circles
+        else:
+            return None
 
 
 def main():
     Tezze=Game();
-    Tezze.setup("Photos/0.jpg");
-    Tezze.setup("Photos/1.jpg");
-    Tezze.setup("Photos/2.jpg");
-    Tezze.setup("Photos/4.jpg");
-    Tezze.setup("Photos/5.jpg");
+    str="Photos"
+    arr = os.listdir(str)
+    for photo in arr:
+        Tezze.setup(str+"/"+photo);
 
 main()

@@ -1,32 +1,53 @@
 import math
 import numpy as np
 import cv2
+import imutils
+import sys
 
 class Segment:
-    def __init__(self,centroid,color,contour,id,circleNo,circle,lobe=-1):
+    def __init__(self,centroid,contour,Image=0,color=-1,circleNo=-1,circle=-1,id=-1):
         self.Centroid=centroid
         self.Color=color
         self.Contour=contour
         self.ID=id
-        self.Lobe=lobe
         self.CircleNo=circleNo
         self.Circle=circle
+        self.Image=Image
 
+    def __eq__(self, other): 
+        if not isinstance(other, Segment):
+            raise Exception('Segment being compared with another type {}'.format(type(other)))
+        elif(self.ID == other.ID):
+            return True
+        return False
+
+    def setImage(self,img):
+        self.Image=img
 
     def setCentroid(self,centroid):
         self.Centroid=centroid
-    def setLobe(self,lobe):
-        self.Lobe=lobe
+
+    def setColor(self,color):
+        self.Color=color
+
+    def setContour(self,cnts):
+        self.Contour=cnts.copy()
+
     def setCircleNo(self,circleNo):
         self.CircleNo=circleNo
-    def setCircle(self,Circle):
+
+    def setCircle(self,circle):
         self.Circle=Circle
+
+    def setID(self,id):
+        if(self.ID==-1):
+            self.ID=id
+        else:
+            raise Exception('Reassigning of Ids of the Segment')
     def getCentroid(self):
         return self.Centroid
     def getColor(self):
         return self.Color
-    def getLobe(self):
-        return self.Lobe
     def getID(self):
         return self.ID
     def getContour(self):
@@ -35,102 +56,101 @@ class Segment:
         return self.CircleNo
     def getCircle(self):
         return self.Circle
-    def getAngle(self):
-        CircleCenter=self.Circle.getIndvCenter()
-        SegmentCenter=self.getCentroid()
-        return math.atan2(abs(CircleCenter[1]-SegmentCenter[1]),abs(CircleCenter[0]-SegmentCenter[0]))
+    def getImage(self):
+        return self.Image
 
-    def equals(self,Segment):
+    def RotatePt(self,o,p,r):
+        p = np.atleast_2d(p)
+        p=np.squeeze((r @ p.T - r @ o.T + o.T).T)
+        p=[int(p[0]),int(p[1])]
+        p = np.atleast_2d(p)
+        return p
 
-        Angle1=self.getAngle()
-        Angle2=Segment.getAngle()
-        x_Diff1=self.getCentroid()[0]-self.Circle.getIndvCenter()[0]
-        x_Diff2=Segment.getCentroid()[0]-Segment.Circle.getIndvCenter()[0]
-        Y_Diff1=self.getCentroid()[1]-self.Circle.getIndvCenter()[1]
-        Y_Diff2=Segment.getCentroid()[1]-Segment.Circle.getIndvCenter()[1]
-        Color_sum1=int(self.getColor()[0])+int(self.getColor()[1])+int(self.getColor()[2])
-        Color_sum2=int(Segment.getColor()[0])+int(Segment.getColor()[1])+int(Segment.getColor()[2])
-        Area1=cv2.contourArea(self.getContour())
-        Area2=cv2.contourArea(Segment.getContour())
-        
-        Upper=1.5
-        Lower=0.5
+    def rotateSeg(self,Center,Down=0):
+        ##Getting the angle
+        Angle=60
+        if(Down):
+            Angle*=-1
+        self.setImage(imutils.rotate_bound(self.getImage(), Angle))
+        cnts, hierarchy = cv2.findContours(self.getImage(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        Contour=cnts[0]
+        M = cv2.moments(Contour)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        selfCenter=(cX,cY)
+        OrgCenter=self.getCentroid()
+        Correction_transform=[OrgCenter[0]-selfCenter[0],OrgCenter[1]-selfCenter[1]]
+        Corrected_Contour=Contour+Correction_transform
+#          print( "old ", Contour[0]," Correction ", Correction_transform, " new ", Corrected_Contour[0] )
+        #Rotating the center of the contour abt the center of its respective circle
+        #Angle = np.deg2rad(Angle)
+        #r = np.array([[np.cos(Angle), -np.sin(Angle)],[np.sin(Angle),  np.cos(Angle)]])
+        #o = np.atleast_2d(Center)
+        #NewCenter=self.RotatePt(o,OrgCenter,r)
+        #Finding the diffence in the position b/w the old center and the new center, and then getting the position change vector
+#           print("NewCenter ",NewCenter," OrgCenter ",OrgCenter)
+        #Change=NewCenter-OrgCenter
+        #Adding that change vector to the rest of the contour
+        #Corrected_Contour+=Change[0]
+#            print("Change ", Change[0]," NewLoc ", Corrected_Contour[0])
+        self.setContour(Corrected_Contour)
+        return len(Corrected_Contour)
+        #self.setCentroid(NewCenter[0])
 
-#        print(" x_Diff1 ",x_Diff1," x_Diff2 ",x_Diff2," Y_Diff1 ",Y_Diff1," Y_Diff2 ",Y_Diff2," Color_sum1 ",Color_sum1," Color_sum2 ",Color_sum2," Area1 ",Area1," Area2 ",Area2)
-#        print(np.sign(0))
-        if(np.sign(x_Diff1)==1 and np.sign(x_Diff2)==-1):# and (np.sign(Y_Diff1)==np.sign(Y_Diff2) or (      np.sign(Y_Diff1)==0 or np.sign(Y_Diff2)==0     )  ) ):
-#            if(abs(x_Diff1/x_Diff2)<Upper and abs(x_Diff1/x_Diff2)>Lower and abs(Y_Diff1/Y_Diff2)<Upper and abs(Y_Diff1/Y_Diff2)>Lower):
- #               if(Angle1/Angle2<Upper and Angle1/Angle2>Lower):
-            if(Color_sum1==Color_sum2):
- #               if(Area1/Area2<Upper and Area1/Area2>Lower):
-                if(Area1==Area2):
-                    return True
-        return False
+    def ImageRefresh(self):
+            cnt=self.getContour()
 
-    def FindLobe(self,lobe):
-        pass
-    def FindCircle(self,lobe):
-        pass
-    def IN(self,contour):
-        pass
+            Left=tuple(cnt[cnt[:, :, 0].argmin()][0])
+            Right=tuple(cnt[cnt[:, :, 0].argmax()][0])
+            Top=tuple(cnt[cnt[:, :, 1].argmin()][0])
+            Bottom=tuple(cnt[cnt[:, :, 1].argmax()][0])
+
+            shape=(Bottom[1]-Top[1]+40,Right[1]-Left[1]+40)
+            blank_image = np.zeros(shape, np.uint8)
+
+            OldCenter=self.getCentroid()
+            Blank_Center=(shape[1]//2,shape[0]//2)
+            Change=[    Blank_Center[0]-OldCenter[0],Blank_Center[1]-OldCenter[1]    ]
+            Cnt=cnt+Change
+            cv2.drawContours(blank_image,[Cnt],-1,[255,255,255],-1)
+            self.setImage(blank_image)
+
+            return Top,Bottom,Left,Right,cnt
 
 class Circle():
-    def __init__(self,gamecenter,radius,distanceFromFrame,id,image=0):
+    def __init__(self,gamecenter,radius,distanceFromFrame,id=-1):
         self.GameCenter=gamecenter
         self.Radius=int(radius)
-        self.IndividualCenter=(radius,radius)
         self.ID=id #Make sure 0 is the left, 1 is the right..-1 none? and 2 for both?
         self.DistanceFromFrame=distanceFromFrame #Make sure 0 is the left, 1 is the right
-        self.Image=image
         self.Segments=[]
-        self.Lobes=[]
     def setgameCenter(self,gamecenter):
         self.GameCenter=gamecenter
-    def setIndvCenter(self,individualCenter):
-        self.IndividualCenter=individualCenter
-    def setImage(self,image):
-        self.Image=image
     def setRadius(self,radius):
         self.Radius=int(radius)
-    def setID(self,id):
-        if(self.ID==-1):
-            self.ID=id
-        elif(self.ID==0 or self.ID==1):
-            self.ID=2
     def getDistance(self):
         return self.DistanceFromFrame
     def getGameCenter(self):
         return self.GameCenter
-    def getIndvCenter(self):
-        return self.IndividualCenter
     def getRadius(self):
         return self.Radius
-    def getImage(self):
-        return self.Image
     def getID(self):
         return self.ID
+    def setID(self,iD):
+        self.ID=iD
     def getSegments(self):
         return self.Segments
-
-    def Intersect(self,lobe,Dist_Circles,Dist_lobe_circle):
-        Radius_ratio=1.3
-        Dist_ratio=1.3
-        if(self.getRadius()/lobe.getRadius()<Radius_ratio and lobe.getRadius()/self.getRadius()<Radius_ratio):
-            if(Dist_Circles/Dist_lobe_circle<Dist_ratio and Dist_lobe_circle/Dist_Circles<Dist_ratio):
-                return True
-        return False
-
     def draw(self,frame):
-        pass
-
+        for seg in self.Segments:
+            cv2.drawContours(frame,[seg.getContour()],-1,seg.getColor(),cv2.FILLED)
     def addSeg(self,Seg):
+        Seg.setCircleNo(self.getID())
+        Seg.setCircle(self)
         self.Segments.append(Seg)
-
-    def addLobe(self,lobe):
-        self.Lobes.append(lobe)
-
-    def removeLobe(self,lobe):
-        self.Lobes.remove(lobe)
-
-    def commonSegs(self,Circle):#Circle.CommonSegs(Lobe_Circle)
-        pass#First find the overlapping area's contour. Then find the the lobes in that circle 
+    def RemoveSeg(self,seg1):
+        i=0
+        for seg2 in self.Segments:
+            if(seg1==seg2):
+                self.Segments.pop(i)
+                break
+            i+=1

@@ -11,10 +11,12 @@ After a photo is taken, we find the circles and the individual segments within t
 
 ##### Inner Lobe:
 ![image](https://user-images.githubusercontent.com/42900802/72405780-0c221080-3728-11ea-9ea1-132a888d376e.png)
+
 The area where the two circles overlap is the lob. In my code structure, this area is also considered to be a circle. The segments with in this circle could be rotated by either of the outer circles.
 
 ##### 60:
 ![image](https://user-images.githubusercontent.com/42900802/72406175-5657c180-3729-11ea-8103-80a15d61d79b.png)
+
 A rotation is only of 60 degrees. If you rotate a circle, you need a complete inner lobe for the other circle to be able to rotate. A rotation from one complete inner lobe to another complete inner lobe is only physically possible when you rotates between lobes by an angle of 60 degrees.
 
 ### How to run?

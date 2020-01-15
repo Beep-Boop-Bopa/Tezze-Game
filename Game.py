@@ -7,6 +7,9 @@ import threading as th
 import imutils
 from Segment import Segment,Circle
 import os
+from goprocam import GoProCamera, constants
+from time import time
+import socket
 
 def Var_calc(Img,STD_array,start,end):
     for i in range(start,end):
@@ -48,38 +51,60 @@ class Game:
                     self.Rotate(1,0)
                 elif(key==ord('s')):
                     self.Rotate(1,1)
-                print("self.Segments ", len(self.Segments), " self.Circles[0] ", len(self.Circles[0].getSegments()), " self.Circles[1] ", len(self.Circles[1].getSegments()), "self.Circles[2] ", len(self.Circles[2].getSegments()) )
+                #print("self.Segments ", len(self.Segments), " self.Circles[0] ", len(self.Circles[0].getSegments()), " self.Circles[1] ", len(self.Circles[1].getSegments()), "self.Circles[2] ", len(self.Circles[2].getSegments()) )
         else:
             print("not enough Segments found")
+    
     def Rotate(self,CircleID,Direction=0):
-        Sum=0
+        List=[]
         for seg in self.Circles[CircleID].getSegments():
-            Sum+=seg.rotateSeg(self.Circles[CircleID].getGameCenter(),Direction)
-            self.AssignCircle(seg,-1,seg.getCircleNo())
+            OldCenter=seg.getCentroid()
+            if(seg.getCircleNo()==CircleID):
+                List.append(seg.getID())
+                seg.rotateSeg(self.Circles[CircleID].getGameCenter(),Direction)
+                self.AssignCircle(seg,-1,seg.getCircleNo())
+                self.Segments[seg.getID()]=seg
+            else:
+                print("ShitShow1")
         for seg in self.Circles[2].getSegments():
-            Sum+=seg.rotateSeg(self.Circles[CircleID].getGameCenter(),Direction)
-            self.AssignCircle(seg,-1,2)
-        print("Sum ",Sum)
+            if(seg.getCircleNo()==2):
+                List.append(seg.getID())
+                seg.rotateSeg(self.Circles[CircleID].getGameCenter(),Direction)
+                self.AssignCircle(seg,-1,2)
+                self.Segments[seg.getID()]=seg
+            else:
+                print("ShitShow2")
+        if(len(List)!=22):
+            pass
+        #print("Circle Assignment is off by ", 22-len(List))
+
     def draw(self):
         blank_image1 = np.zeros(self.GameFrame.shape, np.uint8)
         blank_image2 = np.zeros(self.GameFrame.shape, np.uint8)
+        blank_image3 = np.zeros(self.GameFrame.shape, np.uint8)
         for seg in self.Segments:
+            Center=(seg.getCentroid()[0],seg.getCentroid()[1])
             cv2.drawContours(blank_image1,[seg.getContour()],-1,seg.getColor(),cv2.FILLED)
-        for circle in self.Circles:
-            for seg in circle.getSegments():
-                Center=(seg.getCentroid()[0],seg.getCentroid()[1])
-                if(circle.getID()==0):
-                    cv2.putText(blank_image2,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 0.4,(0,0,255),1,cv2.LINE_AA)
-                if(circle.getID()==1):
-                    cv2.putText(blank_image2,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 0.4,(255,0,0),1,cv2.LINE_AA)
-                if(circle.getID()==2):
-                    cv2.putText(blank_image2,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 0.4,(0,255,0),1,cv2.LINE_AA)
-        cv2.imshow('Blank',blank_image1)
-        cv2.imshow('Blank2',blank_image2)
+            if(seg.getCircleNo()==0):
+                cv2.putText(blank_image3,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 1,(0,0,255),1,cv2.LINE_AA)
+                cv2.drawContours(blank_image2,[seg.getContour()],-1,(0,0,255),cv2.FILLED)
+            elif(seg.getCircleNo()==1):
+                cv2.putText(blank_image3,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 1,(0,255,0),1,cv2.LINE_AA)
+                cv2.drawContours(blank_image2,[seg.getContour()],-1,(0,255,0),cv2.FILLED)
+            elif(seg.getCircleNo()==2):
+                cv2.putText(blank_image3,str(seg.getID()),Center,cv2.FONT_HERSHEY_SIMPLEX, 1,(255,0,0),1,cv2.LINE_AA)
+                cv2.drawContours(blank_image2,[seg.getContour()],-1,(255,0,0),cv2.FILLED)
+        cv2.imshow('Segments',blank_image1)
+        cv2.imshow('Circle Allocation',blank_image2)
+        cv2.imshow('IDs',blank_image3)
+        cv2.moveWindow('Segments', 120, 200) 
+        cv2.moveWindow('Circle Allocation', 880, 200)
+        cv2.moveWindow('IDs', 500, 200)
+#            if(seg.getID()==14 or seg.getID()==16 or seg.getID()==19 or seg.getID()==20 or seg.getID()==21 or seg.getID()==27 or seg.getID()==28):
 
     def AssignCircle(self,Seg,id=-1,old_crc=-1):
         Upper=0.95
-        Lower=0.9
+        Lower=0.8
         ##Finding the right Stuff
         i=-1
         Dist1=self.getEuclidDist(Seg.getCentroid(),self.Circles[0].getGameCenter())/self.Circles[0].getRadius()
@@ -111,10 +136,9 @@ class Game:
                             No+=1
                 Seg.setColor(self.findClosetColor([Sum[0]/No,Sum[1]/No,Sum[2]/No]))
                 self.Segments.append(Seg)
-            if(old_crc!=i):
-                if(old_crc!=-1):
-                    self.Circles[old_crc].RemoveSeg(Seg)
-                self.Circles[i].addSeg(Seg)
+            if(old_crc!=-1):
+                self.Circles[old_crc].RemoveSeg(Seg)
+            self.Circles[i].addSeg(Seg)
         return i
 
     def FindSegments(self):
@@ -246,9 +270,28 @@ class Game:
         res2 = res.reshape((img.shape))
 
     def ScaleDown(self,img,Scale=8):
-        self.Scale=1/Scale
-        self.FullFrame=cv2.resize(cv2.imread(img),None,fx=self.Scale,fy=self.Scale)
-
+        #self.Scale=1/Scale
+        #self.FullFrame=cv2.resize(cv2.imread(img),None,fx=self.Scale,fy=self.Scale)
+        gpCam=GoProCamera.GoPro()
+        t=time()
+        sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+        gpCam.livestream("start")
+        gpCam.video_settings(res='1080p',fps='24')
+        gpCam.gpControlSet(constants.Stream.WINDOW_SIZE,constants.Stream.WindowSize.R720)
+        cap=cv2.VideoCapture("udp://10.5.5.9:8554",cv2.CAP_FFMPEG)
+        while True:
+            ret,frame=cap.read()    
+            self.FullFrame=frame.copy()
+            shape=self.FullFrame.shape
+            cv2.line(frame, (shape[1],shape[0]//2), (0,shape[0]//2), [200,200,200],1)
+            cv2.line(frame, (shape[1]//2,shape[0]), (shape[1]//2,0), [200,200,200],1)
+            cv2.putText(frame,"Align the tezze game with the center of the frame and press q",(50,50),cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,255,0),2,cv2.LINE_AA)
+            cv2.imshow("GoPro OpenCV",frame)
+            if time()-t>=2.5:#Sending back that signal to keep the connection open
+                sock.sendto("_GPHD_:0:0:2:0.000000\n".encode(),("10.5.5.9",8554))
+                t=time()
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
     def getEuclidDist(self,Point1,Point2,ThreeD_bool=0):
         X_diff=(Point1[0]-Point2[0])**2
         Y_diff=(Point1[1]-Point2[1])**2
@@ -295,11 +338,18 @@ class Game:
             return None
 
 def main():
-    Tezze=Game();
-    str="Photos"
-    arr = os.listdir(str)
-    for photo in arr:
-        Photo=str+"/"+photo
-        Tezze.setup(Photo);
-
+    #Tezze=Game()
+    #str="Photos"
+    #arr = os.listdir(str)
+    #for photo in arr:
+    #    Photo=str+"/"+photo
+    #    Tezze.setup(Photo)s
+    while(True):
+        Tezze=Game()
+        Tezze.setup(0)
+        cv2.destroyAllWindows()
+        print("Press x to exit or any other key to take an other photo")
+        key=cv2.waitKey(0)
+        if(key==ord('x')):
+            break
 main()

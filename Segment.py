@@ -67,35 +67,30 @@ class Segment:
         return p
 
     def rotateSeg(self,Center,Down=0):
-        ##Getting the angle
         Angle=60
         if(Down):
             Angle*=-1
-        self.setImage(imutils.rotate_bound(self.getImage(), Angle))
-        cnts, hierarchy = cv2.findContours(self.getImage(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        Contour=cnts[0]
-        M = cv2.moments(Contour)
+        Angle = np.deg2rad(Angle)
+        r = np.array([[np.cos(Angle), -np.sin(Angle)],[np.sin(Angle),  np.cos(Angle)]])
+        o = np.atleast_2d(Center)
+
+        pts=[]
+        old=self.getContour()
+        for p in self.getContour():
+            pts.append(self.RotatePt(o,p[0],r))
+        pts=np.asarray(pts)
+        self.setContour(pts)
+
+        M = cv2.moments(self.getContour())
         cX = int(M["m10"] / M["m00"])
         cY = int(M["m01"] / M["m00"])
-        selfCenter=(cX,cY)
-        OrgCenter=self.getCentroid()
-        Correction_transform=[OrgCenter[0]-selfCenter[0],OrgCenter[1]-selfCenter[1]]
-        Corrected_Contour=Contour+Correction_transform
-#          print( "old ", Contour[0]," Correction ", Correction_transform, " new ", Corrected_Contour[0] )
-        #Rotating the center of the contour abt the center of its respective circle
-        #Angle = np.deg2rad(Angle)
-        #r = np.array([[np.cos(Angle), -np.sin(Angle)],[np.sin(Angle),  np.cos(Angle)]])
-        #o = np.atleast_2d(Center)
-        #NewCenter=self.RotatePt(o,OrgCenter,r)
-        #Finding the diffence in the position b/w the old center and the new center, and then getting the position change vector
-#           print("NewCenter ",NewCenter," OrgCenter ",OrgCenter)
-        #Change=NewCenter-OrgCenter
-        #Adding that change vector to the rest of the contour
-        #Corrected_Contour+=Change[0]
-#            print("Change ", Change[0]," NewLoc ", Corrected_Contour[0])
-        self.setContour(Corrected_Contour)
-        return len(Corrected_Contour)
-        #self.setCentroid(NewCenter[0])
+        Center=(cX,cY)
+
+ #       OldCenter=self.getCentroid()
+#        if(self.getID()==14 or self.getID()==16 or self.getID()==19 or self.getID()==20 or self.getID()==21 or self.getID()==27 or self.getID()==28):
+#            print(OldCenter[0]," ",Center[0]," ",OldCenter[1]," ",Center[1])
+  #          print(self.getContour()[0][0],old[0][0])
+        self.setCentroid(Center)
 
     def ImageRefresh(self):
             cnt=self.getContour()
@@ -144,9 +139,10 @@ class Circle():
         for seg in self.Segments:
             cv2.drawContours(frame,[seg.getContour()],-1,seg.getColor(),cv2.FILLED)
     def addSeg(self,Seg):
-        Seg.setCircleNo(self.getID())
-        Seg.setCircle(self)
-        self.Segments.append(Seg)
+        if(Seg not in self.Segments):
+            Seg.setCircleNo(self.getID())
+            Seg.setCircle(self)
+            self.Segments.append(Seg)
     def RemoveSeg(self,seg1):
         i=0
         for seg2 in self.Segments:
